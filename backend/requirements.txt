@@ -12,3 +12,6 @@ langchain-community
 langchain-postgres
 langchain-text-splitters
 langchain-core
+gunicorn
+whitenoise
+dj-database-url
