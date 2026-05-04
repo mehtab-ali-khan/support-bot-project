@@ -195,7 +195,10 @@ For multi-part questions, handle every part before giving the final answer.
 If the user asks for a summary or overview plus a specific fact, call get_document_summary and then call search_document for the specific fact.
 If one tool result does not answer every part of the question, call another tool with a focused query.
 If a tool result does not contain the answer, say that the uploaded document does not contain enough information.
-Do not guess or use outside knowledge."""),
+Do not guess or use outside knowledge.
+When the user asks short questions like "his skills" or "his education" or "his name", 
+assume they are asking about the person or subject in the uploaded document.
+Always search the document before saying you need more context."""),
         HumanMessage(content=question),
     ]
 
