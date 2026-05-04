@@ -4,7 +4,7 @@ import {
   Loader2, ChevronDown, ChevronUp, Wrench, X
 } from "lucide-react";
 
-const API_URL = "http://localhost:8000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
 
 export default function App() {
   const [messages, setMessages] = useState([]);
@@ -26,7 +26,7 @@ export default function App() {
     const file = e.target.files[0];
     if (!file) return;
 
-    if (!file.name.endsWith(".pdf")) {
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
       setError("Only PDF files are allowed");
       return;
     }
@@ -47,6 +47,8 @@ export default function App() {
 
       if (!response.ok) {
         setError(data.error || "Upload failed");
+        setUploadedFile(null);
+        setMessages([]);
         return;
       }
 
@@ -72,11 +74,12 @@ export default function App() {
   };
 
   const handleAsk = async () => {
-    if (!question.trim() || asking) return;
+    const currentQuestion = question.trim();
+    if (!currentQuestion || asking) return;
 
     setMessages((prev) => [...prev, {
       role: "user",
-      text: question,
+      text: currentQuestion,
       sources: [],
       tools_used: []
     }]);
@@ -92,7 +95,7 @@ export default function App() {
       const response = await fetch(`${API_URL}/ask/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({ question: currentQuestion }),
       });
 
       const data = await response.json();
@@ -302,9 +305,9 @@ export default function App() {
                               <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">
                                 Chunk {source.chunk_index}
                               </span>
-                              {source.score !== undefined && (
+                              {Number.isFinite(Number(source.score)) && (
                                 <span className="text-xs bg-blue-50 text-blue-500 px-2 py-0.5 rounded-full">
-                                  {source.score.toFixed(3)}
+                                  {Number(source.score).toFixed(3)}
                                 </span>
                               )}
                             </div>
