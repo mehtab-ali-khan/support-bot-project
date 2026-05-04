@@ -1,22 +1,25 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from pgvector.django import CosineDistance
+from django.db import connection
 from .serializers import PDFUploadSerializer
-from .models import DocumentChunk
-from .embeddings import get_embedding
-from .rag import generate_answer
+from .langchain_rag import ingest_document, answer_question
 import pdfplumber
 
 
-def chunk_text(text, chunk_size=500, overlap=50):
-    chunks = []
-    start = 0
-    while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start = end - overlap
-    return chunks
+def is_document_uploaded():
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT COUNT(*) 
+                FROM langchain_pg_embedding e
+                JOIN langchain_pg_collection c ON e.collection_id = c.uuid
+                WHERE c.name = 'document_chunks'
+            """)
+            count = cursor.fetchone()[0]
+            return count > 0
+    except Exception:
+        return False
 
 
 class HealthCheckView(APIView):
@@ -35,7 +38,7 @@ class PDFUploadView(APIView):
 
         file = serializer.validated_data["file"]
 
-        if not file.name.endswith(".pdf"):
+        if not file.name.lower().endswith(".pdf"):
             return Response(
                 {"error": "Only PDF files are allowed"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -43,24 +46,22 @@ class PDFUploadView(APIView):
 
         try:
             with pdfplumber.open(file) as pdf:
-
-                if len(pdf.pages) == 0:
+                pages_count = len(pdf.pages)
+                if pages_count == 0:
                     return Response(
                         {"error": "PDF file is empty"},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-                extracted_text = ""
-                for page in pdf.pages:
+                extracted_pages = []
+                for page_number, page in enumerate(pdf.pages, start=1):
                     page_text = page.extract_text()
                     if page_text:
-                        extracted_text += page_text + "\n"
+                        extracted_pages.append({"page": page_number, "text": page_text})
 
-                if not extracted_text.strip():
+                if not extracted_pages:
                     return Response(
-                        {
-                            "error": "No text found in PDF. It may be a scanned image PDF."
-                        },
+                        {"error": "No text found in PDF."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
@@ -70,21 +71,13 @@ class PDFUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        DocumentChunk.objects.all().delete()
-        chunks = chunk_text(extracted_text)
-
-        for index, chunk in enumerate(chunks):
-            embedding = get_embedding(chunk)
-            DocumentChunk.objects.create(
-                text=chunk, chunk_index=index, embedding=embedding
-            )
+        total_chunks = ingest_document(extracted_pages, source=file.name)
 
         return Response(
             {
-                "message": "PDF uploaded and chunked successfully",
-                "pages": len(pdf.pages),
-                "total_chunks": len(chunks),
-                "characters": len(extracted_text),
+                "message": "PDF uploaded and processed successfully",
+                "pages": pages_count,
+                "total_chunks": total_chunks,
             },
             status=status.HTTP_200_OK,
         )
@@ -94,31 +87,29 @@ class AskView(APIView):
     def post(self, request):
         question = request.data.get("question", "")
 
-        if not question.strip():
-            return Response(
-                {"error": "No question provided"}, status=status.HTTP_400_BAD_REQUEST
-            )
-
-        if DocumentChunk.objects.count() == 0:
+        if not is_document_uploaded():
             return Response(
                 {"error": "No document uploaded yet. Please upload a PDF first."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        question_embedding = get_embedding(question, task_type="RETRIEVAL_QUERY")
+        if not question.strip():
+            return Response(
+                {"error": "No question provided"}, status=status.HTTP_400_BAD_REQUEST
+            )
 
-        similar_chunks = DocumentChunk.objects.order_by(
-            CosineDistance("embedding", question_embedding)
-        )[:3]
-
-        result = generate_answer(question, similar_chunks)
-
-        return Response(
-            {
-                "question": question,
-                "answer": result.get("answer", ""),
-                "confidence": result.get("confidence", ""),
-                "sources": result.get("sources", []),
-            },
-            status=status.HTTP_200_OK,
-        )
+        try:
+            result = answer_question(question)
+            return Response(
+                {
+                    "question": question,
+                    "answer": result["answer"],
+                    "sources": result["sources"],
+                    "tools_used": result.get("tools_used", []),
+                },
+                status=status.HTTP_200_OK,
+            )
+        except Exception as e:
+            return Response(
+                {"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

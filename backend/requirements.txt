@@ -9,3 +9,6 @@ google-genai
 langchain
 langchain-google-genai
 langchain-community
+langchain-postgres
+langchain-text-splitters
+langchain-core
