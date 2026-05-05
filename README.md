@@ -1,6 +1,6 @@
-# SupporBot
+# DocBot
 
-SupporBot is a full-stack AI document assistant that lets users upload PDF files and ask natural-language questions about their contents. It uses Retrieval-Augmented Generation with Google Gemini, LangChain, PostgreSQL, and pgvector to retrieve relevant document chunks and generate grounded answers with source references.
+DocBot is a full-stack AI document assistant that lets users upload PDF files and ask natural-language questions about their contents. It uses Retrieval-Augmented Generation with Google Gemini, LangChain, PostgreSQL, and pgvector to retrieve relevant document chunks and generate grounded answers with source references.
 
 The application includes a Django REST API for PDF processing, embedding, retrieval, and agentic tool calling, plus a React/Vite frontend for uploading documents and chatting with the assistant.
 
